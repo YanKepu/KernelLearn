@@ -23,7 +23,7 @@ ISO是七层，物理层/传输层
 1. 内核开发工程师将这些头文件存储到一个专门的目录 include/net中，而不是存储到标准位置 include/linux。
 2. 计算机之间通信是一个复杂的问题，如何建立物理连接？使用什么样的线缆？通信介质有哪些限制和特殊的要求？如何处理传输错误？如何识别一个计算机？
 
-### 创建套接字
+### 1 创建套接字
 套接字不仅可以用于各种传输协议的IP连接，也可以用于内核支持的所有其他地址和协议类型（例如IPX、appletalk，本地unix套接字
 
 ```c
@@ -69,7 +69,7 @@ sockaddr_in结构的指针也可以指向sockaddr，一般情况下，需要吧s
 
 BSD网络软件中包含两个重要的函数：inet_addr, inet_ntoa。用来在二进制地址格式和点分十进制字符串之间
 
-### 使用套接字
+### 2 使用套接字
 在服务端的模型中，通常提前创建多个子进程，当客户端的请求到来的时候，系统从进程池中选取一个子进程处理客户端的请求，每个子进程处理一个客户端的请求，在全部子进程的处理能力得到满足之前，服务器的网络负载是基本不变的。（只是例子）
 
 server     start -> socket() -> bind() -> fork() -> wait -> end
@@ -78,7 +78,7 @@ client     loop (accept() -> recv() -> process data )
 TCP 并发服务器简单案例
 TCP并发服务器，在处理客户端请求之前，程序先分叉成3个子进程，对应多个客户端的请求，由多个子进程进行处理，与循环服务器相比较，并发的方式在处理请求时，不在只用一个while做串行处理，而是用fork分到子进程中处理。
 
-### 套接字缓冲区管理数据
+### 3 套接字缓冲区管理数据
 在内核分析(收到)网络分组时，底层协议的数据将传递到更高的层。发送数据时顺序相反，各种协议产生的数据(首部和净荷)依次向更低的层传递，直至最终发送。这些操作的速度对网络子系统的性能有决定性的影响，因此内核使用一种特殊的结构，称为套接字缓冲区(socket buffer)，具体源码分析如下:
 ```c
 // include\linux\skbuff.h 表示网络数据包，是一个双向链表
@@ -297,7 +297,7 @@ struct sk_buff {
 };
 ```
 
-### 套接字缓冲区管理数据
+### 4 套接字缓冲区管理数据
 套接字缓冲区的基本思想是，通过操作指针来增删协议首部。head和end指向数据在内存中的起始和结束位置。data和tail指向协议数据区域的起始和结束位置。mac_header指向mac协议首部的起始，而network_header和transport_header分别指向网络层和传输层协议首部的起始
 
 ![alt text](image.png)
@@ -329,5 +329,151 @@ static inline struct udphdr *udp_hdr(const struct sk_buff *skb)
 
 ```
 
-### 使用双向链表管理套接字缓冲区如下：
+### 5 Linux内核提供操作套接字缓冲区的标准函数如下：
+
+```c
+// linux\include\linux\skbuff.h
+/**
+ * alloc_skb - allocate a network buffer
+ * @size: size to allocate
+ * @priority: allocation mask
+ *
+ * This function is a convenient wrapper around __alloc_skb().
+ */
+static inline struct sk_buff *alloc_skb(unsigned int size,
+					gfp_t priority)		//分配一个新的sk_buff实例
+{
+	return __alloc_skb(size, priority, 0, NUMA_NO_NODE);
+}
+
+// net\core\skbuff.c
+/**
+ *	skb_copy	-	create private copy of an sk_buff
+ *	@skb: buffer to copy
+ *	@gfp_mask: allocation priority
+ *
+ *	Make a copy of both an &sk_buff and its data. This is used when the
+ *	caller wishes to modify the data and needs a private copy of the
+ *	data to alter. Returns %NULL on failure or the pointer to the buffer
+ *	on success. The returned buffer has a reference count of 1.
+ *
+ *	As by-product this function converts non-linear &sk_buff to linear
+ *	one, so that &sk_buff becomes completely private and caller is allowed
+ *	to modify all the data of returned buffer. This means that this
+ *	function is not recommended for use in circumstances when only
+ *	header is going to be modified. Use pskb_copy() instead.
+ */
+
+struct sk_buff *skb_copy(const struct sk_buff *skb, gfp_t gfp_mask)	// 创建套接字缓冲区和相关数据的一个副本
+{
+	int headerlen = skb_headroom(skb);
+	unsigned int size = skb_end_offset(skb) + skb->data_len;
+	struct sk_buff *n = __alloc_skb(size, gfp_mask,
+					skb_alloc_rx_flag(skb), NUMA_NO_NODE);
+
+	if (!n)
+		return NULL;
+
+	/* Set the data pointer */
+	skb_reserve(n, headerlen);
+	/* Set the tail pointer and length */
+	skb_put(n, skb->len);
+
+	BUG_ON(skb_copy_bits(skb, -headerlen, n->head, headerlen + skb->len));
+
+	skb_copy_header(n, skb);
+	return n;
+}
+EXPORT_SYMBOL(skb_copy);
+
+
+/**
+ *	skb_clone	-	duplicate an sk_buff
+ *	@skb: buffer to clone
+ *	@gfp_mask: allocation priority
+ *
+ *	Duplicate an &sk_buff. The new one is not owned by a socket. Both
+ *	copies share the same packet data but not structure. The new
+ *	buffer has a reference count of 1. If the allocation fails the
+ *	function returns %NULL otherwise the new buffer is returned.
+ *
+ *	If this function is called from an interrupt gfp_mask() must be
+ *	%GFP_ATOMIC.
+ */
+
+struct sk_buff *skb_clone(struct sk_buff *skb, gfp_t gfp_mask)		// 创建套接字缓冲区的一个副本，但原本和副本将使用同一个分组数据
+{
+	struct sk_buff_fclones *fclones = container_of(skb,
+						       struct sk_buff_fclones,
+						       skb1);
+	struct sk_buff *n;
+
+	if (skb_orphan_frags(skb, gfp_mask))
+		return NULL;
+
+	if (skb->fclone == SKB_FCLONE_ORIG &&
+	    refcount_read(&fclones->fclone_ref) == 1) {
+		n = &fclones->skb2;
+		refcount_set(&fclones->fclone_ref, 2);
+	} else {
+		if (skb_pfmemalloc(skb))
+			gfp_mask |= __GFP_MEMALLOC;
+
+		n = kmem_cache_alloc(skbuff_head_cache, gfp_mask);
+		if (!n)
+			return NULL;
+
+		n->fclone = SKB_FCLONE_UNAVAILABLE;
+	}
+
+	return __skb_clone(n, skb);
+}
+EXPORT_SYMBOL(skb_clone);
+
+static inline int skb_tailroom(const struct sk_buff *skb);   // 返回数据末端空闲空间的长度
+static inline unsigned int skb_headroom(const struct sk_buff *skb);  	// 返回数据起始处空闲的长度
+struct sk_buff *skb_realloc_headroom(struct sk_buff *skb, unsigned int headroom);   // 在数据起始处创建更多的空闲空间，现在数据不变
+
+```
+### 6 指向传输层首部的指针计算如下：
+```c
+static inline unsigned char *skb_transport_header(const struct sk_buff *skb)
+{
+	return skb->head + skb->transport_header;
+}
+```
+因4字节偏移量足以描述长达4GB的内存区，套接字缓冲区不可能超过这个长度
+
+```c
+static inline void skb_reset_transport_header(struct sk_buff *skb)		// 将传输层首部重置为数据部分的起始位置
+{
+	skb->transport_header = skb->data - skb->head;
+}
+
+static inline void skb_set_transport_header(struct sk_buff *skb, const int offset)	// 根据数据部分中给定的偏移量来设置传输层首部的起始位置			
+{
+	skb_reset_transport_header(skb);
+	skb->transport_header += offset;
+}
+```
+## 管理套接字缓冲区数据
+套接字缓冲区结构不仅包含上述指针，还包括用于处理相关的数据和管理套接字缓冲区自身的其他成员。下面列出的是一些最重要的成员。
+* tsstamp保存了分组到达的时间。
+* dev指定了处理分组的网络设备。
+* sk是一个指针，指向用于处理该分组的套接字对应的socket实例。
+* dst表示接下来该分组通过内核网络实现的路由
+* next和prev用于将套接字缓冲区保存到一个双链表中
+
+```c
+/* 使用一个表头来实现套接字缓冲区的等待队列 */
+struct sk_buff_head {
+	/* These two members must be first. */
+	struct sk_buff	*next;
+	struct sk_buff	*prev;
+
+	__u32		qlen;	// head后面有几个sk_buff链表节点
+	spinlock_t	lock;
+};
+```
+使用双向链表管理套接字缓冲区如下：
 ![alt text](image-1.png)

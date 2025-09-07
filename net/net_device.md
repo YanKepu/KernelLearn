@@ -271,8 +271,11 @@ struct sk_buff {
 };
 ```
 
-## 5 net_device
+## 5 net_device结构解析
 net_device结构体存储着网络设备的所有信息，每个设备都有这种结构。所有设备的net_device结构放在一个全局变量dev_base 的所有全局列表中。和sk_buff一样，整体结构相当庞大。结构体中有一个next指针，用来连接系统中所有网络设备。内核把这些连接起来的设备组成一个链表，并由全局变量dev_base指向链表中的第一个元素。net_device结构体源码分析如下。
+
+设备的IRQ号、设备的MTU、设备的MAC地址、设备的名称(eth1, eth0)、设备的标志（up，down）、与设备相关联的组播地址清单、设备支持的功能、网络设备回调函数的对象（net_device_ops）、设备最后一次发送数据包的时间戳、设备最后一次接收数据包的时间戳。
+具体源码主要成员如下：
 
 ```c
 /**
@@ -520,17 +523,17 @@ net_device结构体存储着网络设备的所有信息，每个设备都有这�
  */
 
 struct net_device {
-	char			name[IFNAMSIZ];
-	struct netdev_name_node	*name_node;
-	struct dev_ifalias	__rcu *ifalias;
+	char			name[IFNAMSIZ];		// 借口名称
+	struct netdev_name_node	*name_node;	// 设备名称散联表的链表元素，哈希链
+	struct dev_ifalias	__rcu *ifalias;	// 网络设备的别名（网络设备的接口索引值，独一无二的网络设备标识符
 	/*
 	 *	I/O specific fields
 	 *	FIXME: Merge these and struct ifmap into one
 	 */
-	unsigned long		mem_end;
-	unsigned long		mem_start;
-	unsigned long		base_addr;
-	int			irq;
+	unsigned long		mem_end;		// 共享内存结束位置
+	unsigned long		mem_start;		// 共享内存开放位置
+	unsigned long		base_addr;		// 设备I/O 地址
+	int			irq;					// 设备IRQ编号
 
 	/*
 	 *	Some hardware also needs these fields (state,dev_list,
@@ -540,23 +543,23 @@ struct net_device {
 
 	unsigned long		state;
 
-	struct list_head	dev_list;
-	struct list_head	napi_list;
-	struct list_head	unreg_list;
-	struct list_head	close_list;
-	struct list_head	ptype_all;
-	struct list_head	ptype_specific;
+	struct list_head	dev_list;			// 网络设备的全局列表
+	struct list_head	napi_list;			// 用于轮训NAPI设备的列表
+	struct list_head	unreg_list;			// 注销设备时的列表项
+	struct list_head	close_list;			// 关闭设备时使用的列表项
+	struct list_head	ptype_all;			// 所有协议的特定与设备的数据包处理程序
+	struct list_head	ptype_specific;		// 特定于设备、特定与协议的数据包处理程序
 
 	struct {
 		struct list_head upper;
 		struct list_head lower;
-	} adj_list;
+	} adj_list;								// 直接连接的设备，如用于连接的从属设备
 
-	netdev_features_t	features;
-	netdev_features_t	hw_features;
-	netdev_features_t	wanted_features;
-	netdev_features_t	vlan_features;
-	netdev_features_t	hw_enc_features;
+	netdev_features_t	features;			// 当前活动设备功能
+	netdev_features_t	hw_features;		// 用于可更改的功能
+	netdev_features_t	wanted_features;	// 用户请求功能
+	netdev_features_t	vlan_features;		// wlan设备可继承功能掩码
+	netdev_features_t	hw_enc_features;	// 封装设备继承的掩码
 	netdev_features_t	mpls_features;
 	netdev_features_t	gso_partial_features;
 
@@ -596,8 +599,8 @@ struct net_device {
 
 	const struct header_ops *header_ops;
 
-	unsigned int		flags;
-	unsigned int		priv_flags;
+	unsigned int		flags;				// 接口标志
+	unsigned int		priv_flags;			
 
 	unsigned short		gflags;
 	unsigned short		padded;
@@ -613,12 +616,12 @@ struct net_device {
 	 * It is recommended to use READ_ONCE() to annotate the reads,
 	 * and to use WRITE_ONCE() to annotate the writes.
 	 */
-	unsigned int		mtu;
+	unsigned int		mtu;				// 网络设备接口的最大传输单元
 	unsigned int		min_mtu;
 	unsigned int		max_mtu;
-	unsigned short		type;
-	unsigned short		hard_header_len;
-	unsigned char		min_header_len;
+	unsigned short		type;				// 接口硬件类型
+	unsigned short		hard_header_len;	// 硬件接口头长度，最大硬件首部长度
+	unsigned char		min_header_len;		// 最小硬件首部长度
 
 	unsigned short		needed_headroom;
 	unsigned short		needed_tailroom;
@@ -634,7 +637,7 @@ struct net_device {
 	unsigned short          dev_port;
 	spinlock_t		addr_list_lock;
 	unsigned char		name_assign_type;
-	bool			uc_promisc;
+	bool			uc_promisc;					// 网络设备接口的单播模式
 	struct netdev_hw_addr_list	uc;
 	struct netdev_hw_addr_list	mc;
 	struct netdev_hw_addr_list	dev_addrs;
@@ -642,8 +645,8 @@ struct net_device {
 #ifdef CONFIG_SYSFS
 	struct kset		*queues_kset;
 #endif
-	unsigned int		promiscuity;
-	unsigned int		allmulti;
+	unsigned int		promiscuity;			// 网络设备接口的混杂模式
+	unsigned int		allmulti;				// 网络设备的全组播模式
 
 
 	/* Protocol-specific pointers */
@@ -678,7 +681,7 @@ struct net_device {
  * Cache lines mostly used on receive path (including eth_type_trans())
  */
 	/* Interface address info used in eth_type_trans() */
-	unsigned char		*dev_addr;
+	unsigned char		*dev_addr;		// 网络设备接口的MAC地址
 
 	struct netdev_rx_queue	*_rx;
 	unsigned int		num_rx_queues;
@@ -697,7 +700,7 @@ struct net_device {
 	struct nf_hook_entries __rcu *nf_hooks_ingress;
 #endif
 
-	unsigned char		broadcast[MAX_ADDR_LEN];
+	unsigned char		broadcast[MAX_ADDR_LEN];		// 硬件多播地址
 #ifdef CONFIG_RFS_ACCEL
 	struct cpu_rmap		*rx_cpu_rmap;
 #endif
