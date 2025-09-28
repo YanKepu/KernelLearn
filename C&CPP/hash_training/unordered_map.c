@@ -1,11 +1,21 @@
+/* 一个用于管理phy寄存器的哈希结构 
+ * 功能：
+ * 创建：create
+ * 访问：
+ * 查找键：find
+ * 统计键：count
+ * 遍历键：
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+
 // 哈希表节点（链表结构解决哈希冲突）
 typedef struct HashNode {
-    char *key;              // 键（假设为字符串）
-    int value;              // 值（假设为整数）
+    __int8_t device;              // 键（假设为字符串）
+    __int8_t regaddr;              // 值（假设为整数）
     struct HashNode *next;  // 指向下一个节点
 } HashNode;
 
@@ -16,7 +26,14 @@ typedef struct {
     int size;               // 当前元素总数
 } HashMap;
 
-
+/************************************************
+ * Function name: hash_function
+ * Description  : 
+ * Parameter    :
+ * @key        
+ * @capacity  
+ * return       : 0 - successful  1- fail
+*************************************************/
 unsigned long hash_function(const char *key, int capacity) {
     unsigned long hash = 5381;
     int c;
@@ -26,6 +43,14 @@ unsigned long hash_function(const char *key, int capacity) {
     return hash % capacity;
 }
 
+/************************************************
+ * Function name: hash_function
+ * Description  : 
+ * Parameter    :
+ * @key        
+ * @capacity  
+ * return       : 0 - successful  1- fail
+*************************************************/
 HashMap *hashmap_create(int capacity) {
     HashMap *map = (HashMap *)malloc(sizeof(HashMap));
     map->capacity = capacity;
