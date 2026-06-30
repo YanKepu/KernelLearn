@@ -26,6 +26,8 @@ cd linux-5.6.14
 make menuconfig
 通过gedit config查看
 
+
+
 3、内核编译
 make
 

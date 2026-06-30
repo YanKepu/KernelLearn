@@ -4,6 +4,36 @@
 
 ## 内存相关配置查看
 
+ 用户态通用命令
+
+free命令
+
+```
+free -h
+bash-4.4#  free -h
+              total        used        free      shared  buff/cache   available
+Mem:           15Gi       2.2Gi       5.0Gi       1.8Gi       8.3Gi        11Gi
+Swap:            0B          0B          0B
+
+total     = MemTotal
+used      = MemTotal - Free - Buffers - Cached - SReclaimable + Shmem
+free      = MemFree
+shared    = Shmem
+buff/cache= Buffers + Cached + SReclaimable - Shmem
+available = MemAvailable
+
+实际上available才是系统真正还能分给新进程的内存
+slab = SReclaimable + Sunreclaim
+SReclaimable:可清理缓存释放，计入buff/cache
+SUnreclaim：内核常驻、不可回收，计入used
+```
+
+
+
+
+
+
+
 ### 设备内存相关问题
 
 #### /proc/meminfo —— 核心状态文件
@@ -256,6 +286,10 @@ void *kmalloc_tag(size_t size, gfp)
 
 
 
+tag
+
+
+
 
 
 
@@ -356,14 +390,16 @@ echo 200 > /proc/sys/vm/vfs_cache_pressure
 
 
 
+# 内存经典问题分析
 
-# 内存泄漏
+## 内存分配与释放错误（生命周期管理不当）
+## 内存泄漏（Memory Leak）
 
-## 概述
+### 概述
 
 内存泄漏是指程序分配的内存未被正确释放，导致可用内存持续减少的现象。在嵌入式设备上，由于资源有限，即使很小的泄漏长时间运行也会导致OOM。
 
-## 分类
+### 分类
 
 ```
 内存泄漏
@@ -379,7 +415,7 @@ echo 200 > /proc/sys/vm/vfs_cache_pressure
     └── 模块卸载时未释放资源
 ```
 
-## 快速判定
+### 快速判定
 
 ```bash
 # 1. 确认是否存在泄漏：观察MemAvailable是否持续下降
@@ -411,11 +447,35 @@ l  AnonPages字段持续增加，用户态导致的内存泄漏
 l  Cached异常持续增加，通常是/var/log目录下有人持续写log导致 
 ```
 
-## 详细定位方法
+### 详细定位方法
 
 > 详细的内存泄漏定位流程和工具使用，请参考 [MemLeak.md](./MemLeak.md)，包含：
 > - 原生工具初步定位（/proc接口、pmap、slabtop）
 > - 高级工具深度分析（ASan、kmemleak、KASAN）
 > - ARM嵌入式平台特例
 > - 内核编译选项
+
+### 野指针/悬空指针
+野指针：已经释放的指针
+悬空指针：指针指向无效的内存地址
+
+
+
+# 内存分析工具
+
+## perf
+
+
+会生成默认文件，通常默认命名为perf.data
+```
+perf report	// 在perf.data所在目录执行，进入交互式界面
+
+
+
+perf report --stdio		// 输出全部文本，方便赋值、保存
+```
+
+
+
+
 
